@@ -181,3 +181,74 @@ add_action('wp_footer', function () {
     </script>
     <?php
 });
+
+
+
+/*----------------- Order Meta Data *-------------------------------------------*/
+add_action('woocommerce_checkout_create_order_line_item', 'save_dynamic_participant_data_to_order', 20, 4);
+function save_dynamic_participant_data_to_order($item, $cart_item_key, $values, $order) {
+    // Dynamically parse all $_POST fields matching participant patterns
+    $participants = [];
+
+    foreach ($_POST as $key => $value) {
+        if (preg_match('/^participant_(\d+)_([a-zA-Z0-9_-]+)$/', $key, $matches)) {
+            $index = intval($matches[1]); // Participant number (1-based)
+            $field = $matches[2];         // Field name (e.g., full_name, email, phone, addon keys)
+
+            if (!isset($participants[$index])) {
+                $participants[$index] = [];
+            }
+
+            $participants[$index][$field] = sanitize_text_field($value);
+        }
+    }
+
+    // Now add each participant's info to the order item meta
+    foreach ($participants as $i => $fields) {
+        $meta_lines = [];
+
+        if (!empty($fields['full_name'])) {
+            $meta_lines[] = 'Name: ' . $fields['full_name'];
+        }
+        if (!empty($fields['email'])) {
+            $meta_lines[] = 'Email: ' . $fields['email'];
+        }
+        if (!empty($fields['phone'])) {
+            $meta_lines[] = 'Phone: ' . $fields['phone'];
+        }
+
+        // Loop other keys (add-ons)
+        foreach ($fields as $field_key => $value) {
+            if (!in_array($field_key, ['full_name', 'email', 'phone']) && $value === 'on') {
+                $label = ucwords(str_replace('-', ' ', $field_key));
+                $meta_lines[] = 'Add-On: ' . $label;
+            }
+        }
+
+        $item->add_meta_data("Participant {$i}", implode("\n", $meta_lines));
+    }
+}
+
+
+/*-----------------end Order Meta Data *-------------------------------------------*/
+
+
+
+
+/*----------------- Emails, add the participant and addons---------------------------*/
+add_filter('woocommerce_order_item_get_formatted_meta_data', 'reformat_participant_meta_with_line_breaks', 15, 2);
+function reformat_participant_meta_with_line_breaks($formatted_meta, $item) {
+    foreach ($formatted_meta as $key => $meta) {
+        if (strpos($meta->key, 'Participant ') === 0) {
+            $lines = explode(',', $meta->value);
+            $clean_lines = array_map('trim', $lines);
+            $formatted_value = implode('<br>', $clean_lines);
+
+            $formatted_meta[$key]->value = $formatted_value;
+        }
+    }
+
+    return $formatted_meta;
+}
+
+/*----------------- end Emails, add the participant and addons---------------------------*/
